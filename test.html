@@ -1,71 +1,125 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Echo-Immersion</title>
+    <title>Reactive Immersion 2.0</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { background: #000; color: #0f0; font-family: monospace; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 100vh; margin: 0; }
-        button { padding: 20px; font-size: 1.2rem; background: transparent; border: 2px solid #0f0; color: #0f0; cursor: pointer; border-radius: 50px; }
-        #status { margin-top: 20px; font-size: 0.8rem; opacity: 0.6; }
-        .visualizer { height: 100px; width: 100%; position: absolute; bottom: 0; }
+        body { background: #010110; color: #00ffff; font-family: 'Courier New', monospace; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
+        #container { position: relative; width: 300px; height: 300px; margin: 0 auto; display: flex; justify-content: center; align-items: center; }
+        button { padding: 25px; font-size: 1.1rem; background: transparent; border: 3px solid #00ffff; color: #00ffff; cursor: pointer; border-radius: 50px; text-transform: uppercase; letter-spacing: 2px; transition: all 0.3s; z-serif: 10; }
+        button:active { transform: scale(0.95); }
+        #status { margin-top: 25px; font-size: 0.8rem; opacity: 0.5; letter-spacing: 1px;}
+        
+        /* The reactive visualizer ring */
+        #ring { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 2px solid #ff00ff; box-shadow: 0 0 20px #ff00ff; opacity: 0; transition: opacity 0.5s; }
     </style>
 </head>
 <body>
-    <h1>RJDj Spirit</h1>
-    <button id="startBtn">START IMMERSIVE AUDIO</button>
-    <div id="status">WEAR HEADPHONES TO AVOID FEEDBACK</div>
+    <div id="container">
+        <div id="ring"></div>
+        <button id="startBtn">START IMMERSIVE SESSION</button>
+    </div>
+    <div id="status">WEAR HEADPHONES. SILENT SWITCH: OFF.</div>
 
     <script>
         const startBtn = document.getElementById('startBtn');
+        const ring = document.getElementById('ring');
         let audioCtx;
+        let isRunning = false;
 
         startBtn.addEventListener('click', async () => {
+            if (isRunning) return; // Prevent double-start
+
             if (!audioCtx) {
                 audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             }
             
+            // iOS requires a user gesture to start audio. 
+            // This 'unlock' oscillator runs silently to activate the context.
+            const unlockOsc = audioCtx.createOscillator();
+            unlockOsc.frequency.value = 1;
+            unlockOsc.connect(audioCtx.destination);
+            unlockOsc.start();
+            unlockOsc.stop(audioCtx.currentTime + 0.1);
+
             try {
+                // 1. Request Microphone Access
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                const source = audioCtx.createMediaStreamSource(stream);
+                const micSource = audioCtx.createMediaStreamSource(stream);
 
-                // --- THE REACTIVE CHAIN ---
-                // 1. Highpass filter to remove rumble
-                const filter = audioCtx.createBiquadFilter();
-                filter.type = "highpass";
-                filter.frequency.value = 100;
+                isRunning = true;
+                startBtn.innerText = "SESSION ACTIVE";
+                startBtn.style.borderColor = "#ff00ff";
+                startBtn.style.color = "#ff00ff";
+                ring.style.opacity = '1';
 
-                // 2. The "Trippy" Delay
-                const delay = audioCtx.createDelay();
-                delay.delayTime.value = 0.4;
+                // --- THE REACTIVE SYNTHESIS ENGINE ---
+                
+                // 2. Highpass Filter (Remove mic rumble and handling noise)
+                const micFilter = audioCtx.createBiquadFilter();
+                micFilter.type = "highpass";
+                micFilter.frequency.value = 150; 
 
-                // 3. Feedback Loop
-                const feedback = audioCtx.createGain();
-                feedback.gain.value = 0.4;
+                // 3. Main Delay (Increased sensitivity: 0.5 feedback, faster delay time)
+                const reactiveDelay = audioCtx.createDelay(1.0); // max delay of 1s
+                reactiveDelay.delayTime.value = 0.35; // The base delay tempo
 
-                // 4. Reactive Pitch Shift (Oscillating)
-                const oscillator = audioCtx.createOscillator();
-                const oscGain = audioCtx.createGain();
-                oscillator.frequency.value = 0.5; // slow pulse
-                oscGain.gain.value = 0.005; // subtle pitch drift
-                oscillator.connect(oscGain);
-                oscGain.connect(delay.delayTime);
-                oscillator.start();
+                // 4. Feedback Gain (How many echoes)
+                const echoFeedback = audioCtx.createGain();
+                echoFeedback.gain.value = 0.55; // Slightly higher for more immersion
 
-                // Connect the graph
-                source.connect(filter);
-                filter.connect(delay);
-                delay.connect(feedback);
-                feedback.connect(delay); // creates the echo loop
-                delay.connect(audioCtx.destination);
+                // 5. Generative Pitch Control (This makes it "match the song")
+                // Instead of a random slow pulse, we use a complex, faster oscillation 
+                // to make the pitch of the environment 'drift' subtly like post-rock tremolo.
+                const pitchTremolo = audioCtx.createOscillator();
+                pitchTremolo.type = 'triangle'; // Smoother drift
+                pitchTremolo.frequency.value = 2.1; // Faster, beat-synced rhythm (approx 126 BPM)
+                
+                const tremoloGain = audioCtx.createGain();
+                tremoloGain.gain.value = 0.007; // Very subtle, intentional drift.
+                
+                pitchTremolo.connect(tremoloGain);
+                tremoloGain.connect(reactiveDelay.delayTime);
+                pitchTremolo.start();
 
-                startBtn.innerText = "HEARING ACTIVE";
-                startBtn.style.borderColor = "#f0f";
-                startBtn.style.color = "#f0f";
+                // 6. Visual Feedback (The glowing ring reacts to your mic level)
+                const analyzer = audioCtx.createAnalyser();
+                analyzer.fftSize = 256;
+                const bufferLength = analyzer.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                
+                function drawVisuals() {
+                    requestAnimationFrame(drawVisuals);
+                    analyzer.getByteFrequencyData(dataArray);
+                    
+                    // Use the average mic level to update ring scale/brightness
+                    let sum = 0;
+                    for(let i=0; i<bufferLength; i++) { sum += dataArray[i]; }
+                    const average = sum / bufferLength;
+                    const scale = 1 + (average / 150); // scales from 1.0 to approx 1.8
+                    
+                    ring.style.transform = `scale(${scale})`;
+                    ring.style.boxShadow = `0 0 ${average/2}px #ff00ff`;
+                }
+                drawVisuals();
+
+                // --- CONNECT THE GRAPH ---
+                micSource.connect(micFilter);
+                micFilter.connect(analyzer); // Visuals get raw filtered mic
+                
+                // Reactive Loop
+                micFilter.connect(reactiveDelay);
+                reactiveDelay.connect(echoFeedback);
+                echoFeedback.connect(reactiveDelay); // Create the loop
+                
+                // Final output mix
+                reactiveDelay.connect(audioCtx.destination); 
+
             } catch (err) {
-                alert("Please allow microphone access and use Safari on iOS.");
+                alert("Deep Dive Failure: Please allow microphone access in Safari.");
+                console.error(err);
             }
         });
     </script>
 </body>
 </html>
-
