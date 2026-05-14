@@ -1,123 +1,98 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Reactive Immersion 2.0</title>
+    <title>RJDj Scene: Deep Dive</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
-        body { background: #010110; color: #00ffff; font-family: 'Courier New', monospace; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
-        #container { position: relative; width: 300px; height: 300px; margin: 0 auto; display: flex; justify-content: center; align-items: center; }
-        button { padding: 25px; font-size: 1.1rem; background: transparent; border: 3px solid #00ffff; color: #00ffff; cursor: pointer; border-radius: 50px; text-transform: uppercase; letter-spacing: 2px; transition: all 0.3s; z-serif: 10; }
-        button:active { transform: scale(0.95); }
-        #status { margin-top: 25px; font-size: 0.8rem; opacity: 0.5; letter-spacing: 1px;}
-        
-        /* The reactive visualizer ring */
-        #ring { position: absolute; width: 100%; height: 100%; border-radius: 50%; border: 2px solid #ff00ff; box-shadow: 0 0 20px #ff00ff; opacity: 0; transition: opacity 0.5s; }
+        body { background: #050505; color: #00d4ff; font-family: 'Helvetica Neue', sans-serif; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 100vh; margin: 0; overflow: hidden; }
+        #visual { position: absolute; top: 0; left: 0; width: 100%; height: 100%; opacity: 0.3; z-index: -1; }
+        button { padding: 30px; font-size: 1rem; background: rgba(0, 212, 255, 0.1); border: 1px solid #00d4ff; color: #00d4ff; cursor: pointer; border-radius: 5px; backdrop-filter: blur(10px); }
+        #versionTag { position: absolute; bottom: 10px; right: 10px; font-size: 10px; font-family: monospace; opacity: 0.4; }
     </style>
 </head>
 <body>
-    <div id="container">
-        <div id="ring"></div>
-        <button id="startBtn">START IMMERSIVE SESSION</button>
-    </div>
-    <div id="status">WEAR HEADPHONES. SILENT SWITCH: OFF.</div>
+    <canvas id="visual"></canvas>
+    <button id="startBtn">INITIALIZE SCENE</button>
+    <div id="versionTag">BUILD v<span id="vNum">0</span></div>
 
     <script>
+        // --- VERSION TRACKING ---
+        let currentV = parseFloat(localStorage.getItem('appVersion') || "2.0");
+        currentV = (currentV + 0.1).toFixed(1);
+        localStorage.setItem('appVersion', currentV);
+        document.getElementById('vNum').innerText = currentV;
+
         const startBtn = document.getElementById('startBtn');
-        const ring = document.getElementById('ring');
         let audioCtx;
-        let isRunning = false;
 
         startBtn.addEventListener('click', async () => {
-            if (isRunning) return; // Prevent double-start
-
-            if (!audioCtx) {
-                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            }
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
             
-            // iOS requires a user gesture to start audio. 
-            // This 'unlock' oscillator runs silently to activate the context.
-            const unlockOsc = audioCtx.createOscillator();
-            unlockOsc.frequency.value = 1;
-            unlockOsc.connect(audioCtx.destination);
-            unlockOsc.start();
-            unlockOsc.stop(audioCtx.currentTime + 0.1);
-
             try {
-                // 1. Request Microphone Access
                 const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
                 const micSource = audioCtx.createMediaStreamSource(stream);
 
-                isRunning = true;
-                startBtn.innerText = "SESSION ACTIVE";
-                startBtn.style.borderColor = "#ff00ff";
-                startBtn.style.color = "#ff00ff";
-                ring.style.opacity = '1';
+                // --- 1. THE CHILL BACKGROUND SYNTH ---
+                // Generates a low, pulsing C-minor pad
+                const createDrone = (freq, vol) => {
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    const lfo = audioCtx.createOscillator();
+                    const lfoGain = audioCtx.createGain();
 
-                // --- THE REACTIVE SYNTHESIS ENGINE ---
-                
-                // 2. Highpass Filter (Remove mic rumble and handling noise)
+                    osc.type = 'sawtooth';
+                    osc.frequency.value = freq;
+                    lfo.frequency.value = 0.2; 
+                    lfoGain.gain.value = 0.005;
+
+                    gain.gain.value = vol;
+                    const filter = audioCtx.createBiquadFilter();
+                    filter.frequency.value = 400;
+
+                    lfo.connect(lfoGain);
+                    lfoGain.connect(osc.detune);
+                    osc.connect(filter);
+                    filter.connect(gain);
+                    gain.connect(audioCtx.destination);
+
+                    osc.start();
+                    lfo.start();
+                };
+
+                // Play C2 and G2 for a perfect fifth drone
+                createDrone(65.41, 0.05); 
+                createDrone(98.00, 0.03);
+
+                // --- 2. THE SENSITIVE REACTIVE MIC ---
                 const micFilter = audioCtx.createBiquadFilter();
-                micFilter.type = "highpass";
-                micFilter.frequency.value = 150; 
+                micFilter.type = "bandpass";
+                micFilter.frequency.value = 800; // Focus on vocal/clapping range
+                micFilter.Q.value = 1;
 
-                // 3. Main Delay (Increased sensitivity: 0.5 feedback, faster delay time)
-                const reactiveDelay = audioCtx.createDelay(1.0); // max delay of 1s
-                reactiveDelay.delayTime.value = 0.35; // The base delay tempo
+                const delay = audioCtx.createDelay(1.0);
+                delay.delayTime.value = 0.5;
 
-                // 4. Feedback Gain (How many echoes)
-                const echoFeedback = audioCtx.createGain();
-                echoFeedback.gain.value = 0.55; // Slightly higher for more immersion
+                const feedback = audioCtx.createGain();
+                feedback.gain.value = 0.6; // High sensitivity
 
-                // 5. Generative Pitch Control (This makes it "match the song")
-                // Instead of a random slow pulse, we use a complex, faster oscillation 
-                // to make the pitch of the environment 'drift' subtly like post-rock tremolo.
-                const pitchTremolo = audioCtx.createOscillator();
-                pitchTremolo.type = 'triangle'; // Smoother drift
-                pitchTremolo.frequency.value = 2.1; // Faster, beat-synced rhythm (approx 126 BPM)
-                
-                const tremoloGain = audioCtx.createGain();
-                tremoloGain.gain.value = 0.007; // Very subtle, intentional drift.
-                
-                pitchTremolo.connect(tremoloGain);
-                tremoloGain.connect(reactiveDelay.delayTime);
-                pitchTremolo.start();
+                // Resonance: Makes mic sounds "sing" in C
+                const resonance = audioCtx.createBiquadFilter();
+                resonance.type = "peaking";
+                resonance.frequency.value = 523.25; // High C
+                resonance.gain.value = 20;
 
-                // 6. Visual Feedback (The glowing ring reacts to your mic level)
-                const analyzer = audioCtx.createAnalyser();
-                analyzer.fftSize = 256;
-                const bufferLength = analyzer.frequencyBinCount;
-                const dataArray = new Uint8Array(bufferLength);
-                
-                function drawVisuals() {
-                    requestAnimationFrame(drawVisuals);
-                    analyzer.getByteFrequencyData(dataArray);
-                    
-                    // Use the average mic level to update ring scale/brightness
-                    let sum = 0;
-                    for(let i=0; i<bufferLength; i++) { sum += dataArray[i]; }
-                    const average = sum / bufferLength;
-                    const scale = 1 + (average / 150); // scales from 1.0 to approx 1.8
-                    
-                    ring.style.transform = `scale(${scale})`;
-                    ring.style.boxShadow = `0 0 ${average/2}px #ff00ff`;
-                }
-                drawVisuals();
-
-                // --- CONNECT THE GRAPH ---
                 micSource.connect(micFilter);
-                micFilter.connect(analyzer); // Visuals get raw filtered mic
-                
-                // Reactive Loop
-                micFilter.connect(reactiveDelay);
-                reactiveDelay.connect(echoFeedback);
-                echoFeedback.connect(reactiveDelay); // Create the loop
-                
-                // Final output mix
-                reactiveDelay.connect(audioCtx.destination); 
+                micFilter.connect(delay);
+                delay.connect(resonance);
+                resonance.connect(feedback);
+                feedback.connect(delay);
+                delay.connect(audioCtx.destination);
+
+                startBtn.innerText = "SCENE ACTIVE";
+                startBtn.style.opacity = "0";
 
             } catch (err) {
-                alert("Deep Dive Failure: Please allow microphone access in Safari.");
-                console.error(err);
+                alert("Please use Safari and enable Mic.");
             }
         });
     </script>
