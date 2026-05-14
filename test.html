@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Echo-Immersion</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { background: #000; color: #0f0; font-family: monospace; text-align: center; display: flex; flex-direction: column; justify-content: center; height: 100vh; margin: 0; }
+        button { padding: 20px; font-size: 1.2rem; background: transparent; border: 2px solid #0f0; color: #0f0; cursor: pointer; border-radius: 50px; }
+        #status { margin-top: 20px; font-size: 0.8rem; opacity: 0.6; }
+        .visualizer { height: 100px; width: 100%; position: absolute; bottom: 0; }
+    </style>
+</head>
+<body>
+    <h1>RJDj Spirit</h1>
+    <button id="startBtn">START IMMERSIVE AUDIO</button>
+    <div id="status">WEAR HEADPHONES TO AVOID FEEDBACK</div>
+
+    <script>
+        const startBtn = document.getElementById('startBtn');
+        let audioCtx;
+
+        startBtn.addEventListener('click', async () => {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                const source = audioCtx.createMediaStreamSource(stream);
+
+                // --- THE REACTIVE CHAIN ---
+                // 1. Highpass filter to remove rumble
+                const filter = audioCtx.createBiquadFilter();
+                filter.type = "highpass";
+                filter.frequency.value = 100;
+
+                // 2. The "Trippy" Delay
+                const delay = audioCtx.createDelay();
+                delay.delayTime.value = 0.4;
+
+                // 3. Feedback Loop
+                const feedback = audioCtx.createGain();
+                feedback.gain.value = 0.4;
+
+                // 4. Reactive Pitch Shift (Oscillating)
+                const oscillator = audioCtx.createOscillator();
+                const oscGain = audioCtx.createGain();
+                oscillator.frequency.value = 0.5; // slow pulse
+                oscGain.gain.value = 0.005; // subtle pitch drift
+                oscillator.connect(oscGain);
+                oscGain.connect(delay.delayTime);
+                oscillator.start();
+
+                // Connect the graph
+                source.connect(filter);
+                filter.connect(delay);
+                delay.connect(feedback);
+                feedback.connect(delay); // creates the echo loop
+                delay.connect(audioCtx.destination);
+
+                startBtn.innerText = "HEARING ACTIVE";
+                startBtn.style.borderColor = "#f0f";
+                startBtn.style.color = "#f0f";
+            } catch (err) {
+                alert("Please allow microphone access and use Safari on iOS.");
+            }
+        });
+    </script>
+</body>
+</html>
+
